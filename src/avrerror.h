@@ -60,6 +60,7 @@ class SystemConsoleHandler {
         //! Sets the output stream, where warnings and errors are sent to
         void SetWarningStream(std::ostream *s);
         
+        void SetTraceFileOrStream(const char *name, unsigned long long maxlines = 0);
         //! Sets the trace to file stream and enables tracing global
         void SetTraceFile(const char *name, unsigned long long maxlines = 0);
         //! Sets the trace to given stream and enables tracing global

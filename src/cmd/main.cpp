@@ -101,7 +101,8 @@ const char Usage[] =
     "-m  <nanoseconds>     maximum run time of <nanoseconds>\n"
     "-M                    disable messages for bad I/O and memory references\n"
     "-p  <port>            use <port> for gdb server\n"
-    "-t --trace <file>     enable trace outputs to <file>\n"
+    "-t --trace <file>     enable trace outputs to <file>.\n"
+    "                      Special files 'stderr' and 'stdout' write to console\n"
     "-l --linestotrace <number>\n"
     "                      maximum number of lines in each trace file.\n"
     "                      0 means endless. Attention: if you use gdb & trace, please use always 0!\n"
@@ -303,8 +304,7 @@ int main(int argc, char *argv[]) {
             case 't':
                 avr_message("Running in Trace Mode with maximum %lld lines per file",
                             linestotrace);
-
-                sysConHandler.SetTraceFile(optarg, linestotrace);
+                sysConHandler.SetTraceFileOrStream(optarg, linestotrace);
                 break;
             
             case 'V':

@@ -76,6 +76,16 @@ void SystemConsoleHandler::SetWarningStream(std::ostream *s) {
     wrnStream = s;
 }
 
+void SystemConsoleHandler::SetTraceFileOrStream(const char *name, unsigned long long maxlines) {
+    if (strcmp(name, "stdout") == 0) {
+        SetTraceStream(&std::cout);
+    } else if (strcmp(name, "stderr") == 0) {
+        SetTraceStream(&std::cerr);
+    } else {
+        SetTraceFile(name, maxlines);
+    }
+}
+
 void SystemConsoleHandler::SetTraceFile(const char *name, unsigned long long maxlines) {
     StopTrace();
     std::ofstream* os = new std::ofstream();
