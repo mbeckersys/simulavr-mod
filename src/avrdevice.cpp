@@ -2,8 +2,8 @@
  ****************************************************************************
  *
  * simulavr - A simulator for the Atmel AVR family of microcontrollers.
- * Copyright (C) 2001, 2002, 2003   Klaus Rudolph       
- * 
+ * Copyright (C) 2001, 2002, 2003   Klaus Rudolph
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -50,7 +50,7 @@ void AvrDevice::AddToCycleList(Hardware *hw) {
     if(find(hwCycleList.begin(), hwCycleList.end(), hw) == hwCycleList.end())
         hwCycleList.push_back(hw);
 }
-        
+
 void AvrDevice::RemoveFromCycleList(Hardware *hw) {
     vector<Hardware*>::iterator element;
     element=find(hwCycleList.begin(), hwCycleList.end(), hw);
@@ -83,20 +83,20 @@ AvrDevice::~AvrDevice() {
         // unregister device on DumpManager
         dumpManager->unregisterAvrDevice(this);
     }
-    
+
     // delete invalid RW memory cells on shadow store + shadow store self
     unsigned size = totalIoSpace - registerSpaceSize - iRamSize - eRamSize;
     for(unsigned idx = 0; idx < size; idx++)
         delete invalidRW[idx];
     delete [] invalidRW;
-    
+
     // delete Ram cells and registers
     for(unsigned idx = 0; idx < registerSpaceSize; idx++)
         delete rw[idx];
     size = registerSpaceSize + ioSpaceSize + iRamSize + eRamSize;
     for(unsigned idx = (registerSpaceSize + ioSpaceSize); idx < size; idx++)
         delete rw[idx];
-    
+
     // delete rw and other allocated objects
     delete Flash;
     delete statusRegister;
@@ -114,7 +114,7 @@ class TwiceTV : public TraceValue {
 public:
     TwiceTV(const std::string &_name, TraceValue *_ref)
         : TraceValue(_ref->bits()+1, _name), ref(_ref) {}
-    
+
     virtual void cycle() {
         change(ref->value()*2);
         set_written();
@@ -133,6 +133,8 @@ AvrDevice::AvrDevice(unsigned int _ioSpaceSize,
     iRamSize(IRamSize),
     eRamSize(ERamSize),
     devSignature(numeric_limits<unsigned int>::max()),
+    cache_insn(NULL),
+    cache_data(NULL),
     abortOnInvalidAccess(false),
     coreTraceGroup(this),
     deferIrq(false),
@@ -154,11 +156,11 @@ AvrDevice::AvrDevice(unsigned int _ioSpaceSize,
     dumpManager = DumpManager::Instance();
     dumpManager->registerAvrDevice(this);
     DebugRecentJumpsIndex = 0;
-    
+
     TraceValue* pc_tracer=trace_direct(&coreTraceGroup, "PC", &cPC);
     coreTraceGroup.RegisterTraceValue(new TwiceTV(coreTraceGroup.GetTraceValuePrefix()+"PCb",  pc_tracer));
     trace_on = 0;
-    
+
     fuses = new AvrFuses;
     lockbits = new AvrLockBits;
     data = new Data; //only the symbol container
@@ -166,12 +168,12 @@ AvrDevice::AvrDevice(unsigned int _ioSpaceSize,
     // placeholder for RAMPZ and EIND register
     rampz = NULL;
     eind = NULL;
-    
+
     // memory space for all RW-Memory addresses + shadow store for invalid cells
-    unsigned invalidSize = totalIoSpace - registerSpaceSize - IRamSize - ERamSize; 
+    unsigned invalidSize = totalIoSpace - registerSpaceSize - IRamSize - ERamSize;
     rw = new RWMemoryMember* [totalIoSpace];
     invalidRW = new RWMemoryMember* [invalidSize];
-    
+
     // the status register is generic to all devices
     status = new HWSreg();
     if(status == NULL)
@@ -182,7 +184,7 @@ AvrDevice::AvrDevice(unsigned int _ioSpaceSize,
 
     // placeholder for SPM register
     spmRegister = NULL;
-    
+
     // create the flash area with specified size
     Flash = new AvrFlash(this, flashSize);
     if(Flash == NULL)
@@ -197,7 +199,7 @@ AvrDevice::AvrDevice(unsigned int _ioSpaceSize,
         if(rw[currentOffset] == NULL)
             avr_error("Not enough memory for registers in AvrDevice::AvrDevice");
         currentOffset++;
-    }      
+    }
 
     /* Create invalid registers in I/O space which will fail on access (to
        make simulavr more robust!)  In all well implemented devices, these
@@ -213,7 +215,7 @@ AvrDevice::AvrDevice(unsigned int _ioSpaceSize,
         invalidRWOffset++;
     }
 
-    // create the internal ram handlers 
+    // create the internal ram handlers
     for(unsigned ii = 0; ii < IRamSize; ii++ ) {
         rw[currentOffset] = new RAM(&coreTraceGroup, "IRAM", ii, IRamSize);
         if(rw[currentOffset] == NULL)
@@ -287,6 +289,10 @@ int AvrDevice::Step(bool &untilCoreStepFinished, SystemClockOffset *nextStepIn_n
                 return 0;
             }
 
+            /*******
+             * IRQs
+             *******/
+
             if(deferIrq && ( newIrqPc != 0xffffffff )) {
                 /* Every IRQ is delayed of one cycle. Normally this happens (see datasheet)
                  * only after a SEI instruction or after a RETI. But because of
@@ -319,6 +325,10 @@ int AvrDevice::Step(bool &untilCoreStepFinished, SystemClockOffset *nextStepIn_n
                 }
             }
 
+            /***************
+             * execute insn
+             ***************/
+
             if(cpuCycles <= 0) {
                 if((unsigned int)(PC << 1) >= (unsigned int)Flash->GetSize() ) {
                     ostringstream os;
@@ -329,12 +339,9 @@ int AvrDevice::Step(bool &untilCoreStepFinished, SystemClockOffset *nextStepIn_n
                     avr_error("%s", s.c_str());
                 }
 
-                DecodedInstruction *de = (Flash->GetInstruction(PC));
-                if(trace_on) {
-                    cpuCycles = de->Trace();
-                } else {
-                    cpuCycles = (*de)(); 
-                }
+                DecodedInstruction *de = (Flash->GetInstruction(PC)); // MBe: only access to insn?
+                cpuCycles = de->Execute(PC, trace_on);
+
                 // report changes on status
                 statusRegister->trigger_change();
             }

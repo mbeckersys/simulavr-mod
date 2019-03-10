@@ -50,7 +50,7 @@ libsim_la_SOURCES = \
   attiny2313.cpp adcpin.cpp application.cpp externalirq.cpp \
   avrdevice.cpp avrerror.cpp avrfactory.cpp avrmalloc.cpp decoder.cpp \
   decoder_trace.cpp flash.cpp flashprog.cpp hardware.cpp helper.cpp cmd/gdbserver.cpp \
-  hwacomp.cpp hwad.cpp hweeprom.cpp avrsignature.cpp avrreadelf.cpp cmd/dumpargs.cpp \
+  hwacomp.cpp hwad.cpp hweeprom.cpp hwcache.cpp avrsignature.cpp avrreadelf.cpp cmd/dumpargs.cpp \
   hwtimer/timerprescaler.cpp hwtimer/prescalermux.cpp \
   hwtimer/timerirq.cpp hwpinchange.cpp hwport.cpp hwspi.cpp hwsreg.cpp \
   hwtimer/icapturesrc.cpp hwstack.cpp hwtimer/hwtimer.cpp hwuart.cpp hwwado.cpp \
@@ -78,7 +78,7 @@ pkginclude_HEADERS = \
   at90canbase.h atmega8.h attiny25_45_85.h atmega668base.h atmega1284abase.h avrdevice.h \
   externalirq.h hardware.h helper.h avrdevice_impl.h avrerror.h avrfactory.h avrmalloc.h \
   string2.h decoder.h externaltype.h flash.h flashprog.h hwdecls.h \
-  funktor.h hwacomp.h hwad.h hweeprom.h string2_template.h hwpinchange.h \
+  funktor.h hwacomp.h hwad.h hweeprom.h hwcache.h string2_template.h hwpinchange.h \
   hwport.h hwspi.h hwsreg.h hwstack.h hwuart.h hwwado.h ioregs.h irqsystem.h \
   memory.h net.h pin.h pinatport.h pinnotify.h pinmon.h printable.h rwmem.h \
   simulationmember.h spisrc.h spisink.h specialmem.h systemclock.h \

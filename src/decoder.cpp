@@ -2,8 +2,8 @@
  ****************************************************************************
  *
  * simulavr - A simulator for the Atmel AVR family of microcontrollers.
- * Copyright (C) 2001, 2002, 2003   Theodore A. Roth, Klaus Rudolph     
- * 
+ * Copyright (C) 2001, 2002, 2003   Theodore A. Roth, Klaus Rudolph
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -27,6 +27,7 @@
 #include "hwstack.h"
 #include "flash.h"
 #include "hwwado.h"
+#include "hwcache.h"
 #include "hwsreg.h"
 #include "avrerror.h"
 #include "ioregs.h"
@@ -100,7 +101,22 @@ static int get_q( word opcode );
 static int get_A_5( word opcode );
 static int get_A_6( word opcode );
 
-avr_op_ADC::avr_op_ADC(word opcode, AvrDevice *c): 
+int DecodedInstruction::Execute(unsigned int pc, bool trace) {
+    int cycles;
+    if (core->cache_insn) {
+        cycles = core->cache_insn->access(pc);
+    }
+
+    if (!trace) {
+        cycles = (*this)();
+    } else {
+        cycles = this->Trace();
+    }
+
+    return cycles;
+}
+
+avr_op_ADC::avr_op_ADC(word opcode, AvrDevice *c):
     DecodedInstruction(c),
     R1(get_rd_5(opcode)),
     R2(get_rr_5(opcode)),
@@ -109,7 +125,7 @@ avr_op_ADC::avr_op_ADC(word opcode, AvrDevice *c):
 unsigned char avr_op_ADC::GetModifiedR() const {
     return R1;
 }
-int avr_op_ADC::operator()() { 
+int avr_op_ADC::operator()() {
     unsigned char rd = core->GetCoreReg(R1);
     unsigned char rr = core->GetCoreReg(R2);
     unsigned char res = rd + rr + status->C;
@@ -126,16 +142,16 @@ int avr_op_ADC::operator()() {
     return 1;   //used clocks
 }
 
-avr_op_ADD::avr_op_ADD(word opcode, AvrDevice *c): 
+avr_op_ADD::avr_op_ADD(word opcode, AvrDevice *c):
     DecodedInstruction(c),
     R1(get_rd_5(opcode)),
-    R2(get_rr_5(opcode)), 
+    R2(get_rr_5(opcode)),
     status(c->status) {}
 
 unsigned char avr_op_ADD::GetModifiedR() const {
     return R1;
 }
-int avr_op_ADD::operator()() { 
+int avr_op_ADD::operator()() {
     unsigned char rd = core->GetCoreReg(R1);
     unsigned char rr = core->GetCoreReg(R2);
     unsigned char res = rd + rr;
@@ -152,7 +168,7 @@ int avr_op_ADD::operator()() {
     return 1;   //used clocks
 }
 
-avr_op_ADIW::avr_op_ADIW(word opcode, AvrDevice *c): 
+avr_op_ADIW::avr_op_ADIW(word opcode, AvrDevice *c):
     DecodedInstruction(c),
     Rl(get_rd_2(opcode)),
     Rh(get_rd_2(opcode) + 1),
@@ -172,16 +188,16 @@ int avr_op_ADIW::operator()() {
     unsigned char rdh = core->GetCoreReg(Rh);
 
 
-    status->V = ~(rdh >> 7 & 0x1) & (res >> 15 & 0x1); 
+    status->V = ~(rdh >> 7 & 0x1) & (res >> 15 & 0x1);
     status->N = (res >> 15) & 0x1;
     status->S = status->N ^ status->V;
     status->Z = (res & 0xffff) == 0;
-    status->C = ~(res >> 15 & 0x1) & (rdh >> 7 & 0x1); 
+    status->C = ~(res >> 15 & 0x1) & (rdh >> 7 & 0x1);
 
     core->SetCoreReg(Rl, res & 0xff);
     core->SetCoreReg(Rh, res >> 8);
 
-    return 2; 
+    return 2;
 }
 
 avr_op_AND::avr_op_AND(word opcode, AvrDevice *c):
@@ -194,13 +210,13 @@ int avr_op_AND::operator()() {
     unsigned char res = core->GetCoreReg(R1) & core->GetCoreReg(R2);
 
     status->V = 0;
-    status->N = (res >> 7) & 0x1; 
+    status->N = (res >> 7) & 0x1;
     status->S = status->N ^ status->V;
-    status->Z = (res & 0xff) == 0; 
+    status->Z = (res & 0xff) == 0;
 
     core->SetCoreReg(R1, res);
 
-    return 1; 
+    return 1;
 }
 
 avr_op_ANDI::avr_op_ANDI(word opcode, AvrDevice *c):
@@ -214,12 +230,12 @@ int avr_op_ANDI::operator()() {
     unsigned char res = rd & K;
 
     status->V = 0;
-    status->N = (res >> 7) & 0x1; 
+    status->N = (res >> 7) & 0x1;
     status->S = status->N ^ status->V;
-    status->Z = (res & 0xff) == 0; 
+    status->Z = (res & 0xff) == 0;
 
     core->SetCoreReg(R1, res);
-    
+
     return 1;
 }
 
@@ -229,7 +245,7 @@ avr_op_ASR::avr_op_ASR(word opcode, AvrDevice *c):
     status(c->status) {}
 
 int avr_op_ASR::operator()() {
-    unsigned char rd = core->GetCoreReg(R1); 
+    unsigned char rd = core->GetCoreReg(R1);
     unsigned char res = (rd >> 1) + (rd & 0x80);
 
     status->N = (res >> 7) & 0x1;
@@ -251,7 +267,7 @@ avr_op_BCLR::avr_op_BCLR(word opcode, AvrDevice *c):
 
 int avr_op_BCLR::operator()() {
     *status = (*status) & ~(1 << Kbit);
-    
+
     return 1;
 }
 
@@ -269,7 +285,7 @@ int avr_op_BLD::operator()() {
     if(T == 0)
         res = rd & ~(1 << Kbit);
     else
-        res = rd | (1 << Kbit); 
+        res = rd | (1 << Kbit);
 
     core->SetCoreReg(R1, res);
 
@@ -323,7 +339,7 @@ avr_op_BSET::avr_op_BSET(word opcode, AvrDevice *c):
 
 int avr_op_BSET::operator()() {
     *(status) = *(status) | 1 << Kbit;
-    
+
     return 1;
 }
 
@@ -334,7 +350,7 @@ avr_op_BST::avr_op_BST(word opcode, AvrDevice *c):
     status(c->status) {}
 
 int avr_op_BST::operator()() {
-    status->T = ((core->GetCoreReg(R1) & (1 << Kbit)) != 0); 
+    status->T = ((core->GetCoreReg(R1) & (1 << Kbit)) != 0);
 
     return 1;
 }
@@ -343,12 +359,12 @@ avr_op_CALL::avr_op_CALL(word opcode, AvrDevice *c):
     DecodedInstruction(c, true),
     KH(get_k_22(opcode)) {}
 
-int avr_op_CALL::operator()() 
+int avr_op_CALL::operator()()
 {
     word K_lsb = core->Flash->ReadMemWord((core->PC + 1) * 2);
     int k = (KH << 16) + K_lsb;
     int clkadd = core->flagXMega ? 1 : 2;
-    
+
     core->stack->m_ThreadList.OnCall();
     core->stack->PushAddr(core->PC + 2);
     core->DebugOnJump();
@@ -364,9 +380,9 @@ avr_op_CBI::avr_op_CBI(word opcode, AvrDevice *c):
 
 int avr_op_CBI::operator()() {
     int clks = (core->flagXMega || core->flagTiny10) ? 1 : 2;
-    
+
     core->SetIORegBit(ioreg, Kbit, false);
-    
+
     return clks;
 }
 
@@ -440,7 +456,7 @@ int avr_op_CPC::operator()() {
 avr_op_CPI::avr_op_CPI(word opcode, AvrDevice *c):
     DecodedInstruction(c),
     R1(get_rd_4(opcode)),
-    K(get_K_8(opcode)), 
+    K(get_K_8(opcode)),
     status(c->status) {}
 
 int avr_op_CPI::operator()() {
@@ -579,7 +595,7 @@ int avr_op_ELPM::operator()() {
     unsigned Z = (rampz << 16) + core->GetRegZ();
 
     core->SetCoreReg(0, core->Flash->ReadMem(Z ^ 0x1));
-    
+
     return 3;
 }
 
@@ -590,7 +606,7 @@ avr_op_EOR::avr_op_EOR(word opcode, AvrDevice *c):
     status(c->status) {}
 
 int avr_op_EOR::operator()() {
-    byte rd = core->GetCoreReg(R1); 
+    byte rd = core->GetCoreReg(R1);
     byte rr = core->GetCoreReg(R2);
     byte res = rd ^ rr;
 
@@ -657,7 +673,7 @@ avr_op_FMULS::avr_op_FMULS(word opcode, AvrDevice *c):
     status(c->status) {}
 
 int avr_op_FMULS::operator()() {
-    sbyte rd = core->GetCoreReg(Rd); 
+    sbyte rd = core->GetCoreReg(Rd);
     sbyte rr = core->GetCoreReg(Rr);
 
     word resp = rd * rr;
@@ -718,7 +734,7 @@ avr_op_IJMP::avr_op_IJMP(word opcode, AvrDevice *c):
 
 int avr_op_IJMP::operator()() {
     int new_pc = core->GetRegZ();
-    
+
     core->DebugOnJump();
     core->PC = new_pc - 1;
 
@@ -776,7 +792,7 @@ int avr_op_LDD_Y::operator()() {
     word Y = core->GetRegY();
 
     core->SetCoreReg(Rd, core->GetRWMem(Y + K));
-    
+
     return ((core->flagXMega || core->flagTiny10) && K == 0) ? 1 : 2;
 }
 
@@ -802,7 +818,7 @@ avr_op_LDI::avr_op_LDI(word opcode, AvrDevice *c):
 unsigned char avr_op_LDI::GetModifiedR() const {
     return R1;
 }
-int avr_op_LDI::operator()() { 
+int avr_op_LDI::operator()() {
     core->SetCoreReg(R1, K);
 
     return 1;
@@ -815,10 +831,10 @@ avr_op_LDS::avr_op_LDS(word opcode, AvrDevice *c):
 int avr_op_LDS::operator()() {
     /* Get data at k in current data segment and put into Rd */
     word offset = core->Flash->ReadMemWord((core->PC + 1) * 2);
-    
+
     core->SetCoreReg(R1, core->GetRWMem(offset));
     core->PC++;
-    
+
     return 2;
 }
 
@@ -831,7 +847,7 @@ int avr_op_LD_X::operator()() {
     word X = core->GetRegX();
 
     core->SetCoreReg(Rd, core->GetRWMem(X));
-    
+
     return (core->flagXMega || core->flagTiny10) ? 1 : 2;
 }
 
@@ -969,7 +985,7 @@ avr_op_LPM::avr_op_LPM(word opcode, AvrDevice *c):
 int avr_op_LPM::operator()() {
     /* Z is R31:R30 */
     word Z = core->GetRegZ();
-    
+
     Z ^= 0x0001;
     core->SetCoreReg(0 , core->Flash->ReadMem(Z));
 
@@ -999,7 +1015,7 @@ avr_op_LSR::avr_op_LSR(word opcode, AvrDevice *c):
     status(c->status) {}
 
 int avr_op_LSR::operator()() {
-    byte rd = core->GetCoreReg(Rd); 
+    byte rd = core->GetCoreReg(Rd);
 
     byte res = (rd >> 1) & 0x7f;
 
@@ -1214,7 +1230,7 @@ int avr_op_RCALL::operator()() {
     if(core->flagTiny10)
         return 4;
     return core->PC_size + (core->flagXMega ? 0 : 1);
-    
+
 }
 
 avr_op_RET::avr_op_RET(word opcode, AvrDevice *c):
@@ -1335,9 +1351,9 @@ avr_op_SBI::avr_op_SBI(word opcode, AvrDevice *c):
 
 int avr_op_SBI::operator()() {
     int clks = (core->flagXMega || core->flagTiny10) ? 1 : 2;
-    
+
     core->SetIORegBit(ioreg, Kbit, true);
-    
+
     return clks;
 }
 
@@ -1363,7 +1379,7 @@ int avr_op_SBIC::operator()() {
 
     if(core->flagXMega)
         clks++;
-    
+
     return clks;
 }
 
@@ -1389,7 +1405,7 @@ int avr_op_SBIS::operator()() {
 
     if(core->flagXMega)
         clks++;
-    
+
     return clks;
 }
 
@@ -1564,7 +1580,7 @@ avr_op_ST_X::avr_op_ST_X(word opcode, AvrDevice *c):
 int avr_op_ST_X::operator()() {
     /* X is R27:R26 */
     word X = core->GetRegX();
-    
+
     core->SetRWMem(X, core->GetCoreReg(R1));
 
     return (core->flagXMega || core->flagTiny10) ? 1 : 2;
@@ -1618,7 +1634,7 @@ int avr_op_ST_Y_decr::operator()() {
     word Y = core->GetRegY();
     if (R1 == 28 || R1 == 29)
         avr_error( "Result of operation is undefined" );
- 
+
     /* Perform pre-decrement */
     Y--;
     core->SetCoreReg(28, Y & 0xff);
@@ -1657,7 +1673,7 @@ int avr_op_ST_Z_decr::operator()() {
     word Z = core->GetRegZ();
     if (R1 == 30 || R1 == 31)
         avr_error( "Result of operation is undefined" );
- 
+
     /* Perform pre-decrement */
     Z--;
     core->SetCoreReg(30, Z & 0xff);
@@ -1708,7 +1724,7 @@ int avr_op_SUB::operator()() {
     status->S = status->N ^ status->V;
     status->Z = (res & 0xff) == 0;
     status->C = get_sub_carry(res, rd, rr, 7);
-    
+
     core->SetCoreReg(R1, res);
 
     return 1;
@@ -1748,7 +1764,7 @@ int avr_op_SWAP::operator()() {
     byte res = ((rd << 4) & 0xf0) | ((rd >> 4) & 0x0f);
 
     core->SetCoreReg(R1, res);
-    
+
     return 1;
 }
 
@@ -1827,7 +1843,7 @@ static int get_compare_overflow( byte res, byte rd, byte rr )
      * but that doesn't make any sense. You be the judge. */
     return (rd7 & ~rr7 & ~res7) | (~rd7 & rr7 & res7);
 }
-static int n_bit_unsigned_to_signed( unsigned int val, int n ) 
+static int n_bit_unsigned_to_signed( unsigned int val, int n )
 {
     /* Convert n-bit unsigned value to a signed value. */
     unsigned int mask;
@@ -1836,7 +1852,7 @@ static int n_bit_unsigned_to_signed( unsigned int val, int n )
         return (int)val;
 
     /* manually calculate two's complement */
-    mask = (1 << n) - 1; 
+    mask = (1 << n) - 1;
     return -1 * ((~val & mask) + 1);
 }
 
@@ -2184,7 +2200,7 @@ DecodedInstruction* lookup_opcode( word opcode, AvrDevice *core )
                                  case 0x8200: return new  avr_op_STD_Z(opcode, core);   /* 10q0 qq1d dddd 0qqq | STD */
                              }
                          }
-                         
+
                          /* opcodes with a absolute 22-bit address (k) operand */
                          decode = opcode & ~(mask_k_22);
                          switch ( decode ) {

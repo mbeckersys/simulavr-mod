@@ -1,7 +1,7 @@
 #! /bin/bash
 
 # libtool - Provide generalized library-building support services.
-# Generated automatically by config.status (simulavr) 1.1dev
+# Generated automatically by config.status (simulavr) 1.1-cache
 # Libtool was configured on host rcs-x220-mb:
 # NOTE: Changes made to this file will be lost: look at ltmain.sh.
 #

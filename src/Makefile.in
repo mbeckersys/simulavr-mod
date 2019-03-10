@@ -127,12 +127,12 @@ avr_vpi_la_LINK = $(LIBTOOL) --tag=CXX $(AM_LIBTOOLFLAGS) \
 libsim_la_DEPENDENCIES = $(am__DEPENDENCIES_1)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_libsim_la_OBJECTS = at4433.lo at8515.lo atmega668base.lo \
-	atmega128.lo at90canbase.lo atmega8.lo atmega1284abase.lo \
+	atmega128.lo atmega128_c.lo at90canbase.lo atmega8.lo atmega1284abase.lo \
 	attiny25_45_85.lo atmega16_32.lo attiny2313.lo adcpin.lo \
 	application.lo externalirq.lo avrdevice.lo avrerror.lo \
 	avrfactory.lo avrmalloc.lo decoder.lo decoder_trace.lo \
 	flash.lo flashprog.lo hardware.lo helper.lo cmd/gdbserver.lo \
-	hwacomp.lo hwad.lo hweeprom.lo avrsignature.lo avrreadelf.lo \
+	hwacomp.lo hwad.lo hweeprom.lo hwcache.lo avrsignature.lo avrreadelf.lo \
 	cmd/dumpargs.lo hwtimer/timerprescaler.lo \
 	hwtimer/prescalermux.lo hwtimer/timerirq.lo hwpinchange.lo \
 	hwport.lo hwspi.lo hwsreg.lo hwtimer/icapturesrc.lo hwstack.lo \
@@ -419,7 +419,7 @@ libsim_la_SOURCES = \
   attiny2313.cpp adcpin.cpp application.cpp externalirq.cpp \
   avrdevice.cpp avrerror.cpp avrfactory.cpp avrmalloc.cpp decoder.cpp \
   decoder_trace.cpp flash.cpp flashprog.cpp hardware.cpp helper.cpp cmd/gdbserver.cpp \
-  hwacomp.cpp hwad.cpp hweeprom.cpp avrsignature.cpp avrreadelf.cpp cmd/dumpargs.cpp \
+  hwacomp.cpp hwad.cpp hweeprom.cpp hwcache.cpp avrsignature.cpp avrreadelf.cpp cmd/dumpargs.cpp \
   hwtimer/timerprescaler.cpp hwtimer/prescalermux.cpp \
   hwtimer/timerirq.cpp hwpinchange.cpp hwport.cpp hwspi.cpp hwsreg.cpp \
   hwtimer/icapturesrc.cpp hwstack.cpp hwtimer/hwtimer.cpp hwuart.cpp hwwado.cpp \
@@ -437,11 +437,11 @@ libsimulavr_la_LDFLAGS = -module -avoid-version -shared \
 libsimulavr_la_LIBADD = libsim.la $(LIBZ_FLAGS) $(EXTRA_LIBS) \
 	$(am__append_6)
 pkginclude_HEADERS = \
-  adcpin.h application.h at4433.h at8515.h atmega128.h atmega16_32.h attiny2313.h \
+  adcpin.h application.h at4433.h at8515.h atmega128.h atmega128_c.h atmega16_32.h attiny2313.h \
   at90canbase.h atmega8.h attiny25_45_85.h atmega668base.h atmega1284abase.h avrdevice.h \
   externalirq.h hardware.h helper.h avrdevice_impl.h avrerror.h avrfactory.h avrmalloc.h \
   string2.h decoder.h externaltype.h flash.h flashprog.h hwdecls.h \
-  funktor.h hwacomp.h hwad.h hweeprom.h string2_template.h hwpinchange.h \
+  funktor.h hwacomp.h hwad.h hweeprom.h hwcache.h string2_template.h hwpinchange.h \
   hwport.h hwspi.h hwsreg.h hwstack.h hwuart.h hwwado.h ioregs.h irqsystem.h \
   memory.h net.h pin.h pinatport.h pinnotify.h pinmon.h printable.h rwmem.h \
   simulationmember.h spisrc.h spisink.h specialmem.h systemclock.h \
@@ -459,7 +459,7 @@ simulavr_LDADD = libsim.la $(LIBZ_FLAGS) $(EXTRA_LIBS)
 @USE_VERILOG_TRUE@avr_vpi_la_LDFLAGS = -avoid-version -module -shared
 @USE_VERILOG_TRUE@avr_vpi_la_LIBADD = libsim.la $(LIBZ_FLAGS) $(EXTRA_LIBS)
 @USE_VERILOG_TRUE@avr_vpi_la_CXXFLAGS = $(AM_CXXFLAGS)
-TCLHEADER = avrdevice.h at8515.h atmega128.h at4433.h cmd/gdb.h hardware.h \
+TCLHEADER = avrdevice.h at8515.h atmega128.h atmega128_c.h at4433.h cmd/gdb.h hardware.h \
     ui/keyboard.h ui/lcd.h net.h pin.h ui/extpin.h ui/keyboard.h rwmem.h \
     ui/scope.h ui/serialrx.h ui/serialtx.h systemclock.h systemclocktypes.h \
     ui/ui.h
@@ -760,6 +760,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/at8515.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/at90canbase.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atmega128.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atmega128_c.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atmega1284abase.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atmega16_32.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atmega668base.Plo@am__quote@
@@ -783,6 +784,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hwacomp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hwad.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hweeprom.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hwcache.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hwpinchange.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hwport.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hwspi.Plo@am__quote@

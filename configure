@@ -2960,7 +2960,7 @@ fi
 
 # Define the identity of the package.
  PACKAGE='simulavr'
- VERSION='1.1dev'
+ VERSION='1.1-cache'
 
 
 cat >>confdefs.h <<_ACEOF
