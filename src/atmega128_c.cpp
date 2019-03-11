@@ -85,9 +85,9 @@ AvrDevice_atmega128_c::AvrDevice_atmega128_c():
 {
     flagELPMInstructions = true;
     fuses->SetFuseConfiguration(18, 0xfd99e1);
-    irqSystem = new HWIrqSystem(this, 4, 36); //4 bytes per vector, 35+1 vectors
+    irqSystem = new HWIrqSystem(this, 4, 36); //4 bytes per vector, 35+1 vectors vvvv
     eeprom = new HWEeprom( this, irqSystem, 4096, 22);
-    cache_insn = new HWCache(this, irqSystem, 4096, 35);  // last vector is for i-cache
+    cache_insn = new HWCache(this, 128, 32, 4, irqSystem, 4096, 35);  // last IRQ is for i-cache
     stack = new HWStackSram(this, 16);
     xdiv_reg = new XDIVRegister(this, &coreTraceGroup);
     osccal_reg = new OSCCALRegister(this, &coreTraceGroup, OSCCALRegister::OSCCAL_V3);

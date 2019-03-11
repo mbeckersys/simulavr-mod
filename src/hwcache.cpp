@@ -29,68 +29,108 @@
 #include "irqsystem.h"
 #include "avrerror.h"
 #include <assert.h>
+#include <cmath>
+#include <sstream>
 
 using namespace std;
 
+static inline bool powerof_two(int n) {
+    return n && !(n & (n - 1));
+}
+
 HWCache::HWCache(AvrDevice *_core,
-                   HWIrqSystem *_irqSystem,
-                   unsigned int size,
-                   unsigned int irqVec):
+                 unsigned int lines,
+                 unsigned int linesize,
+                 unsigned int assoc,
+                 HWIrqSystem *_irqSystem,
+                 unsigned int size,
+                 unsigned int irqVec):
     Hardware(_core),
     TraceValueRegister(_core, "CACHE"),
     core(_core),
     irqSystem(_irqSystem),
     irqVectorNo(irqVec),
-    ccr_reg(this, "CCR",
-            this, &HWCache::GetCcr, &HWCache::SetCcr),
-    devMode(DEVMODE_NORMAL)
+    ccr_reg(this, "CCR", this, &HWCache::GetCcr, &HWCache::SetCcr),
+    opState(OPSTATE_ENABLED),
+    opMode(OPMODE_WRITETHROUGH),
+    cacheHitCycles(0),
+    cacheMissCycles(3),
+    cache_lines(lines),
+    cache_linesize(linesize),
+    cache_assoc(assoc)
 {
     if(irqSystem)
         irqSystem->DebugVerifyInterruptVector(irqVectorNo, this);
 
-    // operation duration, see datasheets for time!
-    if(devMode == DEVMODE_NORMAL) {
-        eraseWriteDelayTime = 8500000LL; // 8.5ms
-        eraseDelayTime = 0LL; // isn't available in this op mode!
-        writeDelayTime = 0LL; // isn't available in this op mode!
+    if(opMode == OPMODE_WRITETHROUGH) {
+        cacheClearTime = 1500000LL; // 1.5ms - just drops data
     } else {
-        eraseWriteDelayTime = 3400000LL; // 3.4ms
-        eraseDelayTime = 1800000LL; // 1.8ms
-        writeDelayTime = 1800000LL; // 1.8ms
+        cacheClearTime = 8500000LL; // 8.5ms - writeback needs to store to backing memory
     }
-
-    // in normal mode only erase + write in one operation is available
-    if((devMode == DEVMODE_NORMAL)) {
-        if(irqSystem == NULL)
-            ccr_mask = 0x07; // without operation mode bits and irq enable
-        else
-            ccr_mask = 0x0f; // without operation mode bits
-    } else
-        ccr_mask = 0x3f; // with operation mode bits
-    ccr = 0;
-
-    opState = OPSTATE_READY;
-
+    if(irqSystem == NULL) {
+        ccr_mask = ~CTRL_IRQ;  // ignore IRQ bit if system is not set up
+    }
+    ccr = CTRL_UNINITIALIZED;
     Reset();
+    _init_cache_model();
 }
 
 void HWCache::Reset() {
-    ccr &= 0x32; // bit 1 reflect CACHE statemachine state before reset!
-                  // bit 4 and bit 5 are operation modes, which are hold over reset
-
-    opEnableCycles = 0;
     cpuHoldCycles = 0;
-}
 
+    // by default: cache ON
+    ccr = CTRL_ENABLE;
+    if (irqSystem)
+        ccr |= CTRL_IRQ;
+    opState = OPSTATE_ENABLED;
+    opMode = OPMODE_WRITETHROUGH;
+}
 
 HWCache::~HWCache() {
 
 }
 
-int HWCache::access(unsigned int addr, unsigned char len) {
-    if(core->trace_on == 1)
-        traceOut << "CACHE: Read at 0x" << hex << addr << dec << " len=" << (int)len << " ";
-    return 0;  // TODO: model cache
+void HWCache::_init_cache_model() {
+    assert(powerof_two(cache_linesize));
+    assert(powerof_two(cache_lines));
+    cache_offsetbits = (int)(log(cache_linesize) / log(2.));
+    cache_sets = cache_lines / cache_assoc;
+
+    // verbose config
+    stringstream ss;
+    ss << " CACHE: lines=" << cache_lines << " each " << cache_linesize
+       << "bytes (" << cache_offsetbits << "bits), assoc=" << cache_assoc
+       << ", sets=" << cache_sets << ", policy=LRU";
+    avr_warning(ss.str().c_str());
+}
+
+/**
+ * @brief read/write item at [addr, addr + len[.
+ * @param allow_update if true, accessed item is cached thereafter, otherwise cache is bypassed
+ */
+int HWCache::_serve_request
+(unsigned int addr, unsigned char len, bool write, bool allow_update) {
+    int cycles = 0;
+    // 1. compute set & check alignment
+    unsigned int block = addr >> cache_offsetbits;
+    unsigned int set = block % cache_sets;
+    // 2. search sets
+    // 2.1 start walk list.
+    // 2.2. if found, goto 4.
+    // 2.3. if not found && set full, evict (writeback?)
+    // 3. load/update age
+
+    return cycles;
+}
+
+int HWCache::access(unsigned int addr, unsigned char len, bool write) {
+    int cycles = 0;
+    if (opState == OPSTATE_ENABLED || opState == OPSTATE_LOCKED) {
+        if(core->trace_on == 1)
+            traceOut << "CACHE: Read at 0x" << hex << addr << dec << " len=" << (int)len << " ";
+        cycles = _serve_request(addr, len, write, opState == OPSTATE_LOCKED);
+    }
+    return cycles;
 }
 
 void HWCache::SetCcr(unsigned char newval) {
@@ -101,110 +141,85 @@ void HWCache::SetCcr(unsigned char newval) {
 
     switch(opState) {
 
-        default:
-        case OPSTATE_READY:
-            // enable write mode
-            if((ccr & CTRL_ENABLE) == CTRL_ENABLE) {
-                opState = OPSTATE_ENABLED;
-                opEnableCycles = 4;
-                core->AddToCycleList(this);
-            }
-            // read will be processed immediately
-            if((ccr & CTRL_READ) == CTRL_READ) {
-                cpuHoldCycles = 4;
-                ccr &= ~CTRL_READ; // reset read bit isn't described in document!
-                core->AddToCycleList(this);
-                if(core->trace_on == 1)
-                    traceOut << " CACHE: Read = 0x" << hex << 0 << dec;
-            }
-            // write will not processed
-            ccr &= ~CTRL_WRITE;
-            break;
-
+        case OPSTATE_LOCKED:
         case OPSTATE_ENABLED:
-            // enable bit will be hold in this state
-            ccr |= CTRL_ENABLE;
-            // read will be processed immediately
-            if((ccr & CTRL_READ) == CTRL_READ) {
-                cpuHoldCycles = 4;  // Datasheet: "When the CACHE is read, the CPU is halted for four cycles"
-                ccr &= ~CTRL_READ; // reset read bit isn't described in document!
+            if ((ccr & CTRL_ENABLE) != CTRL_ENABLE) {
+                cpuHoldCycles = 1;
+                opState = OPSTATE_DISABLED;
                 if(core->trace_on == 1)
-                    traceOut << " CACHE: Read = 0x" << hex << 0 << dec;
-                break; // to ignore possible write request!
+                    traceOut << " CACHE: disabled";
+                break;
             }
-            // start write operation
-            if((ccr & CTRL_WRITE) == CTRL_WRITE) {
-                cpuHoldCycles = 2;  // Datasheet: "When EEWE has been set, the CPU is halted for two cycles"
-                // abort enable state, switch to write state
-                opMode = ccr & CTRL_MODES;
-                ccr &= ~CTRL_ENABLE;
+
+            if ((ccr & CTRL_CLEAR) == CTRL_CLEAR) {
+                cpuHoldCycles = 4;
                 // start timer ...
-                SystemClockOffset t;
-                switch(opMode & CTRL_MODES) {
-                    default:
-                    case CTRL_MODE_ERASEWRITE:
-                        t = eraseWriteDelayTime;
-                        break;
-                    case CTRL_MODE_ERASE:
-                        t = eraseDelayTime;
-                        break;
-                    case CTRL_MODE_WRITE:
-                        t = writeDelayTime;
-                        break;
-                }
-                writeDoneTime = SystemClock::Instance().GetCurrentTime() + t;
+                SystemClockOffset t = cacheClearTime;
+                clearDoneTime = SystemClock::Instance().GetCurrentTime() + t;
+                opState = OPSTATE_CLEARING;
+                ccr &= ~CTRL_CLEAR;  // immediately revoke bit
                 if(core->trace_on == 1)
-                    traceOut << " CACHE: Write start";
+                    traceOut << " CACHE: Clear start";
+                break; // to ignore any other requests
+            }
+
+            if ((ccr & CTRL_LOCK) == CTRL_LOCK) {
+                // lock request
+                if (opState == OPSTATE_ENABLED) {
+                    cpuHoldCycles = 1;
+                    opState = OPSTATE_LOCKED;
+                    if(core->trace_on == 1)
+                        traceOut << " CACHE: locked";
+                }
+            } else {
+                // unlock request
+                if (opState == OPSTATE_LOCKED) {
+                    cpuHoldCycles = 1;
+                    // abort enable state, switch to write state
+                    opState = OPSTATE_ENABLED;
+                    if(core->trace_on == 1)
+                        traceOut << " CACHE: locked";
+                }
             }
             break;
 
-        case OPSTATE_WRITE:
-            // enable write mode, mode change will not happen!
-            if((ccr & CTRL_ENABLE) == CTRL_ENABLE) {
-                opEnableCycles = 4;
+        case OPSTATE_DISABLED:
+            if (ccr & CTRL_ENABLE == CTRL_ENABLE) {
+                cpuHoldCycles = 1;
+                opState = OPSTATE_ENABLED;
+                if(core->trace_on == 1)
+                    traceOut << " CACHE: enabled";
             }
-            // read is ignored here
-            ccr &= ~CTRL_READ;
-            // write is hold
-            ccr |= CTRL_WRITE;
             break;
 
+        default:
+            if (ccr & CTRL_MODE_WRITEBACK == CTRL_MODE_WRITEBACK) {
+                if (opMode != OPMODE_WRITEBACK) {
+                    opMode = OPMODE_WRITEBACK;
+                    if(core->trace_on == 1)
+                        traceOut << " CACHE: writeback mode";
+                }
+            } else {
+                if (opMode != OPMODE_WRITETHROUGH) {
+                    opMode = OPMODE_WRITETHROUGH;
+                    if(core->trace_on == 1)
+                        traceOut << " CACHE: writethrough mode";
+                }
+            }
+            break;
     }
 }
 
 unsigned int HWCache::CpuCycle() {
 
-    // handle enable state and fallback to ready
-    if(opEnableCycles > 0) {
-        opEnableCycles--;
-        if(opEnableCycles == 0) {
-            ccr &= ~CTRL_ENABLE;
-            if(opState == OPSTATE_ENABLED)
-                opState = OPSTATE_READY;
-            if(core->trace_on == 1)
-                traceOut << " CACHE: WriteEnable cleared";
-        }
-    }
-
-    // handle write state
-    if(opState == OPSTATE_WRITE) {
-        if(SystemClock::Instance().GetCurrentTime() >= writeDoneTime) {
-            // go to ready state
-            opState = OPSTATE_READY;
-            // reset write enable bit
-            ccr &= ~CTRL_WRITE;
+    // handle clear state
+    if(opState == OPSTATE_CLEARING) {
+        if(SystemClock::Instance().GetCurrentTime() >= clearDoneTime) {
+            // go back to ready state
+            opState = OPSTATE_ENABLED;
             // process operation
-            switch(opMode & CTRL_MODES) {
-                default:
-                case CTRL_MODE_ERASEWRITE:
-                    break;
-                case CTRL_MODE_ERASE:
-                    break;
-                case CTRL_MODE_WRITE:
-                    break;
-            }
             if(core->trace_on == 1)
-                traceOut << " CACHE: Write done";
+                traceOut << " CACHE: Clear done";
             // now raise irq if enabled and available
             if((irqSystem != NULL) && ((ccr & CTRL_IRQ) == CTRL_IRQ))
                 irqSystem->SetIrqFlag(this, irqVectorNo);
@@ -212,8 +227,8 @@ unsigned int HWCache::CpuCycle() {
     }
 
     // deactivate engine, if not used
-    if((opState == OPSTATE_READY) && (cpuHoldCycles == 0) && (opEnableCycles == 0))
-        core->RemoveFromCycleList(this);
+    //if((opState == OPSTATE_READY) && (cpuHoldCycles == 0) && (opEnableCycles == 0))
+    //    core->RemoveFromCycleList(this);
 
     // handle cpu hold state
     if(cpuHoldCycles > 0) {

@@ -32,53 +32,80 @@
 #include "traceval.h"
 #include "irqsystem.h"
 
-//! abstract cache model copied from HWEeprom. Does *not* track contents, only addresses and states.
+/**
+ * @brief abstract cache model copied from HWEeprom.
+ * Does *not* track contents, only addresses and states.
+ *
+ * IRQ: raised when after cache clear request has been processed.
+ */
 class HWCache: public Hardware, public TraceValueRegister {
+    public:
+        //! cache operational state machine:
+        typedef enum {
+          OPSTATE_DISABLED = 0, ///< all misses
+          OPSTATE_ENABLED,
+          OPSTATE_LOCKED,
+          OPSTATE_CLEARING
+        } op_state_e;
+
+        //! if enabled, we have the following modes:
+        typedef enum {
+          OPMODE_WRITETHROUGH = 0,
+          OPMODE_WRITEBACK
+        } op_mode_e;
+
     protected:
         AvrDevice *core;
         unsigned char ccr;
         unsigned char ccr_mask;
         HWIrqSystem* irqSystem;
         unsigned int irqVectorNo;
-        int opEnableCycles;
         int cpuHoldCycles;
-        int opState;
-        int opMode;
+        op_state_e opState;  ///< state machine
+        op_mode_e opMode;
         unsigned int opAddr;
-        SystemClockOffset eraseWriteDelayTime;
-        SystemClockOffset eraseDelayTime;
-        SystemClockOffset writeDelayTime;
-        SystemClockOffset writeDoneTime;
+        int cacheHitCycles;
+        int cacheMissCycles;
+        SystemClockOffset cacheClearTime;  ///< time, not clocks
+        SystemClockOffset clearDoneTime;
+
+        unsigned int cache_lines;
+        unsigned int cache_linesize;
+        unsigned int cache_assoc;
+        // computed:
+        unsigned int cache_sets;
+        unsigned int cache_offsetbits;
+
+        int _serve_request(unsigned int addr, unsigned char len, bool write, bool allow_update);
+        void _init_cache_model();
 
     public:
-        typedef enum {
-          DEVMODE_NORMAL = 0,
-          DEVMODE_EXTENDED
-        } c_mode;
-
+        //! bits in ctrl register
         enum {
-          OPSTATE_READY,
-          OPSTATE_ENABLED,
-          OPSTATE_WRITE
-        };
-
-        enum {
-          CTRL_MODE_ERASEWRITE = 0,
-          CTRL_READ = 1,
-          CTRL_WRITE = 2,
-          CTRL_ENABLE = 4,
-          CTRL_IRQ = 8,
-          CTRL_MODE_ERASE = 16,
-          CTRL_MODE_WRITE = 32,
+          CTRL_UNINITIALIZED = 0,
+          CTRL_ENABLE = 1,  ///< cache enable
+          CTRL_LOCK = 2,    ///< lock cache
+          CTRL_CLEAR = 4,   ///< cache is cleared if set
+          CTRL_IRQ = 8,     ///< interrupt enable
+          CTRL_MODE_WRITEBACK = 16,  ///< 0=writethrough
+          CTRL_MODE_OTHER = 32,
           CTRL_MODES = 48,
         };
 
-        HWCache(AvrDevice *core, HWIrqSystem *irqs, unsigned int size, unsigned int irqVec);
+        HWCache(AvrDevice *core,
+                unsigned int lines,
+                unsigned int linesize,
+                unsigned int assoc,
+                HWIrqSystem *irqs,
+                unsigned int size,
+                unsigned int irqVec);
+
         virtual ~HWCache();
 
         //! returns number of cpu cycles taken to access data item
-        int access(unsigned int addr, unsigned char len);
+        int access(unsigned int addr, unsigned char len, bool write=false);
 
+        //! returns > 0 if wait states are required
         virtual unsigned int CpuCycle();
         void Reset();
         void ClearIrqFlag(unsigned int vector);
@@ -87,7 +114,6 @@ class HWCache: public Hardware, public TraceValueRegister {
         unsigned char GetCcr() { return ccr; }
 
         IOReg<HWCache> ccr_reg;  //! cache control register
-        c_mode devMode;
 };
 
 #endif
