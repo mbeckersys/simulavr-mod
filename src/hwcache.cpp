@@ -87,7 +87,9 @@ HWCache::~HWCache() {
 
 }
 
-int HWCache::access(unsigned int addr) {
+int HWCache::access(unsigned int addr, unsigned char len) {
+    if(core->trace_on == 1)
+        traceOut << "CACHE: Read at 0x" << hex << addr << dec << " len=" << (int)len << " ";
     return 0;  // TODO: model cache
 }
 

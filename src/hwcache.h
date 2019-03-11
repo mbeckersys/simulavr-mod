@@ -77,7 +77,7 @@ class HWCache: public Hardware, public TraceValueRegister {
         virtual ~HWCache();
 
         //! returns number of cpu cycles taken to access data item
-        int access(unsigned int addr);
+        int access(unsigned int addr, unsigned char len);
 
         virtual unsigned int CpuCycle();
         void Reset();

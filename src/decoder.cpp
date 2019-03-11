@@ -104,7 +104,7 @@ static int get_A_6( word opcode );
 int DecodedInstruction::Execute(unsigned int pc, bool trace) {
     int cycles;
     if (core->cache_insn) {
-        cycles = core->cache_insn->access(pc);
+        cycles = core->cache_insn->access(pc*2, this->len());
     }
 
     if (!trace) {

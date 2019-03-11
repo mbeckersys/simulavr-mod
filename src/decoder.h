@@ -56,6 +56,8 @@ class DecodedInstruction {
         virtual unsigned char GetModifiedR() const {return -1;}
         //! If this instruction modifies a pair of R0-R31 registers then ...
         virtual unsigned char GetModifiedRHi() const {return -1;}
+        //! length of opcode
+        virtual unsigned char len() const {return 2;}
 
     private:
         //! Performs instruction. Access only via Execute()
@@ -375,6 +377,7 @@ class avr_op_CALL: public DecodedInstruction
         avr_op_CALL(word opcode, AvrDevice *c);
         int operator()();
         int Trace();
+        unsigned char len() const {return 4;}
 };
 
 class avr_op_CBI: public DecodedInstruction
@@ -844,6 +847,7 @@ class avr_op_JMP: public DecodedInstruction
         avr_op_JMP (word opcode, AvrDevice *c);
         int operator()();
         int Trace();
+        unsigned char len() const {return 4;}
 };
 
 class avr_op_LDD_Y: public DecodedInstruction
@@ -932,6 +936,7 @@ class avr_op_LDS: public DecodedInstruction
         avr_op_LDS(word opcode, AvrDevice *c);
         int operator()();
         int Trace();
+        unsigned char len() const {return 4;}
 };
 
 class avr_op_LD_X: public DecodedInstruction
@@ -1823,6 +1828,7 @@ class avr_op_STS: public DecodedInstruction
         avr_op_STS(word opcode, AvrDevice *c);
         int operator()();
         int Trace();
+        unsigned char len() const {return 4;}
 };
 
 class avr_op_ST_X: public DecodedInstruction

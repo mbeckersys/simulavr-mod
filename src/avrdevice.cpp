@@ -339,7 +339,7 @@ int AvrDevice::Step(bool &untilCoreStepFinished, SystemClockOffset *nextStepIn_n
                     avr_error("%s", s.c_str());
                 }
 
-                DecodedInstruction *de = (Flash->GetInstruction(PC)); // MBe: only access to insn?
+                DecodedInstruction *de = Flash->GetInstruction(PC);
                 cpuCycles = de->Execute(PC, trace_on);
 
                 // report changes on status
