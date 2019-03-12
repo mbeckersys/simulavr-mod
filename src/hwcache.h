@@ -26,6 +26,8 @@
 #ifndef HWCACHE
 #define HWCACHE
 
+#include <string>
+#include <stdio.h>
 #include "rwmem.h"
 #include "hardware.h"
 #include "memory.h"
@@ -122,7 +124,7 @@ class HWCache: public Hardware, public TraceValueRegister {
                                    unsigned tag, bool write);
         void _clear_cache(void);
         void _cleanup_cache_model(void);
-
+        void trace(const char *fmt, ...);
 
     public:
         //! bits in ctrl register
@@ -143,14 +145,17 @@ class HWCache: public Hardware, public TraceValueRegister {
                 unsigned int assoc,
                 HWIrqSystem *irqs,
                 unsigned int size,
-                unsigned int irqVec);
+                unsigned int irqVec,
+                bool trace_on=false);
 
         virtual ~HWCache();
 
         //! returns number of cpu cycles taken to access data item
         int access(unsigned int addr, unsigned char len, bool write=false);
 
+        std::string get_stats(void);
         void print_stats(void);
+        void fprint_stats(FILE* fp);
 
         //! returns > 0 if wait states are required
         virtual unsigned int CpuCycle();
@@ -161,6 +166,7 @@ class HWCache: public Hardware, public TraceValueRegister {
         unsigned char GetCcr() { return ccr; }
 
         IOReg<HWCache> ccr_reg;  //! cache control register
+        FILE* traceFile;
 };
 
 #endif

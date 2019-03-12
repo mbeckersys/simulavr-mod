@@ -23,6 +23,7 @@
  *  $Id$
  */
 
+#include <stdarg.h>
 #include "hwcache.h"
 #include "avrdevice.h"
 #include "systemclock.h"
@@ -33,7 +34,6 @@
 #include <string.h>
 #include <cmath>
 #include <sstream>
-#include <stdio.h>
 
 using namespace std;
 
@@ -56,7 +56,8 @@ HWCache::HWCache(AvrDevice *_core,
                  unsigned int assoc,
                  HWIrqSystem *_irqSystem,
                  unsigned int size,
-                 unsigned int irqVec):
+                 unsigned int irqVec,
+                 bool trace_on):
     Hardware(_core),
     TraceValueRegister(_core, "CACHE"),
     core(_core),
@@ -73,6 +74,13 @@ HWCache::HWCache(AvrDevice *_core,
     cacheWritethroughCycles(5),
     cacheWritebackCycles(5)
 {
+    if (trace_on) {
+        traceFile = fopen("cache.trace", "w");
+        avr_warning("Writing cache trace to 'cache.trace'");
+    } else {
+        traceFile = NULL;
+    }
+
     if(irqSystem)
         irqSystem->DebugVerifyInterruptVector(irqVectorNo, this);
 
@@ -102,6 +110,10 @@ void HWCache::Reset() {
 
 HWCache::~HWCache() {
     print_stats();
+    if (traceFile) {
+        fprint_stats(traceFile);
+        fclose(traceFile);
+    }
     _cleanup_cache_model();
 }
 
@@ -129,28 +141,43 @@ void HWCache::_init_cache_model(void) {
 
     // verbose config
     stringstream ss;
-    ss << " CACHE: lines=" << cache_config_nlines << " each " << cache_config_linesize
+    ss << "Cache config: lines=" << cache_config_nlines << " each " << cache_config_linesize
        << "bytes (" << cache_offsetbits << "bits), assoc=" << cache_config_assoc
        << ", sets=" << cache_config_nsets << ", policy=LRU";
-    avr_warning(ss.str().c_str());
+    const char* msg = ss.str().c_str();
+    trace(msg);
+    avr_warning(msg);
 }
 
-void HWCache::print_stats(void) {
+std::string HWCache::get_stats(void)
+{
     stringstream ss;
     unsigned lines_used = 0;
     for (int set = 0; set < cache_config_nsets; ++set) {
-        lines_used += cache_model_sets[set].num_entries;
+        unsigned ne = cache_model_sets[set].num_entries;
+        lines_used += ne;
     }
     ss << "CACHE statistics:" << endl
-       << "  usage%:     " << 100.f*(((float)lines_used) / cache_config_nlines) << endl
-       << "  accesses:   " << stats.num_access << endl
-       << "  misses:     " << stats.num_miss << endl
-       << "  hit ratio%: " << 100.f - 100.f*(((float)stats.num_miss) / stats.num_access) << endl
-       << "  evictions:  " << stats.num_evict << endl
-       << "  writeback:  " << stats.num_writeback << endl
-       << "  unaligned:  " << stats.num_unaligned << endl
-       << "  clears:     " << stats.num_clears << endl;
-    avr_warning(ss.str().c_str());
+       << "  usage%:      " << 100.f*(((float)lines_used) / cache_config_nlines) << endl
+       << "  accesses:    " << stats.num_access << endl
+       << "  misses/%:    " << stats.num_miss << " / "
+                            << 100.f*(((float)stats.num_miss) / stats.num_access) << endl
+       << "  evictions:   " << stats.num_evict << endl
+       << "  unaligned/%: " << stats.num_unaligned << " / "
+                            << 100.f*(((float)stats.num_unaligned) / stats.num_access) << endl
+       << "  writeback:   " << stats.num_writeback << endl
+       << "  clears:      " << stats.num_clears << endl;
+    return ss.str();
+}
+
+void HWCache::fprint_stats(FILE* fp) {
+    std::string strstat = get_stats();
+    fprintf(fp, "%s\n", strstat.c_str());
+}
+
+void HWCache::print_stats(void) {
+    std::string strstat = get_stats();
+    avr_warning(strstat.c_str());
 }
 
 /**
@@ -168,10 +195,12 @@ inline int HWCache::_update_set_lru
         // not in cache
         if (cache_model_sets[set].num_entries == cache_config_assoc) {
             // eviction needed: throw out oldest (LRU)
+            trace("EV: S=%d, t=0x%x", set, tag);
             assert(checked_item);
             if (opMode == OPMODE_WRITEBACK && checked_item->dirty) {
                 cycles += cacheWritebackCycles;
                 stats.num_writeback++;
+                trace("WB: S=%d, t=0x%x", set, tag);
             }
             // take its line
             accessed_item = checked_item;
@@ -196,7 +225,6 @@ inline int HWCache::_update_set_lru
 
     // finally, set bits
     accessed_item->dirty = (write && opMode == OPMODE_WRITEBACK);
-
     return cycles;
 }
 
@@ -228,6 +256,7 @@ inline int HWCache::_access_set
     } else {
         cycles = cacheMissCycles;
         stats.num_miss++;
+        trace("M: S=%d, t=0x%x", set, tag);
     }
     if (write && opMode == OPMODE_WRITETHROUGH) {
         cycles += cacheWritethroughCycles;
@@ -252,11 +281,14 @@ int HWCache::_serve_access
     int cycles = 0;
     // compute set & check alignment
     const unsigned block = addr >> cache_offsetbits;
-    const unsigned offset = addr - block;
+    const unsigned offset = addr - (block << cache_offsetbits);
     const unsigned set = block % cache_config_nsets;
     cycles += _access_set(set, block, write, allow_update);
 
-    if (offset + len > cache_config_linesize) {
+    const bool unaligned = offset + len > cache_config_linesize;
+    trace("%c 0x%x +%d (S=%d) %c", !write ? 'R' : 'W', addr, len, set, unaligned ? 'U' : ' ');
+
+    if (unaligned) {
         // unaligned access
         const unsigned next_block = block + 1;
         const unsigned next_set = next_block % cache_config_nsets;
@@ -269,8 +301,6 @@ int HWCache::_serve_access
 int HWCache::access(unsigned int addr, unsigned char len, bool write) {
     int cycles = 0;
     if (opState == OPSTATE_ENABLED || opState == OPSTATE_LOCKED) {
-        if(core->trace_on == 1)
-            traceOut << "CACHE: Read at 0x" << hex << addr << dec << " len=" << (int)len << " ";
         cycles = _serve_access(addr, len, write, opState != OPSTATE_LOCKED);
     }
     return cycles;
@@ -287,8 +317,7 @@ void HWCache::_clear_cache(void) {
 }
 
 void HWCache::SetCcr(unsigned char newval) {
-    if(core->trace_on == 1)
-        traceOut << "CCR=0x" << hex << (unsigned int)newval << dec;
+    trace("CCR=0x%x", newval);
 
     ccr = newval & ccr_mask;
 
@@ -299,8 +328,7 @@ void HWCache::SetCcr(unsigned char newval) {
             if ((ccr & CTRL_ENABLE) != CTRL_ENABLE) {
                 cpuHoldCycles = 1;
                 opState = OPSTATE_DISABLED;
-                if(core->trace_on == 1)
-                    traceOut << " CACHE: disabled";
+                trace("DISABLE");
                 break;
             }
 
@@ -312,8 +340,7 @@ void HWCache::SetCcr(unsigned char newval) {
                 opState = OPSTATE_CLEARING;
                 _clear_cache();
                 ccr &= ~CTRL_CLEAR;  // immediately revoke bit
-                if(core->trace_on == 1)
-                    traceOut << " CACHE: Clear start";
+                trace("CL start");
                 break; // to ignore any other requests
             }
 
@@ -322,8 +349,7 @@ void HWCache::SetCcr(unsigned char newval) {
                 if (opState == OPSTATE_ENABLED) {
                     cpuHoldCycles = 1;
                     opState = OPSTATE_LOCKED;
-                    if(core->trace_on == 1)
-                        traceOut << " CACHE: locked";
+                    trace("LOCK");
                 }
             } else {
                 // unlock request
@@ -331,8 +357,7 @@ void HWCache::SetCcr(unsigned char newval) {
                     cpuHoldCycles = 1;
                     // abort enable state, switch to write state
                     opState = OPSTATE_ENABLED;
-                    if(core->trace_on == 1)
-                        traceOut << " CACHE: locked";
+                    trace("UNLOCK");
                 }
             }
             break;
@@ -341,8 +366,7 @@ void HWCache::SetCcr(unsigned char newval) {
             if (ccr & CTRL_ENABLE == CTRL_ENABLE) {
                 cpuHoldCycles = 1;
                 opState = OPSTATE_ENABLED;
-                if(core->trace_on == 1)
-                    traceOut << " CACHE: enabled";
+                trace("ENABLE");
             }
             break;
 
@@ -350,14 +374,12 @@ void HWCache::SetCcr(unsigned char newval) {
             if (ccr & CTRL_MODE_WRITEBACK == CTRL_MODE_WRITEBACK) {
                 if (opMode != OPMODE_WRITEBACK) {
                     opMode = OPMODE_WRITEBACK;
-                    if(core->trace_on == 1)
-                        traceOut << " CACHE: writeback mode";
+                    trace("MODE=WB");
                 }
             } else {
                 if (opMode != OPMODE_WRITETHROUGH) {
                     opMode = OPMODE_WRITETHROUGH;
-                    if(core->trace_on == 1)
-                        traceOut << " CACHE: writethrough mode";
+                    trace("MODE=WT");
                 }
             }
             break;
@@ -372,8 +394,7 @@ unsigned int HWCache::CpuCycle() {
             // go back to ready state
             opState = OPSTATE_ENABLED;
             // process operation
-            if(core->trace_on == 1)
-                traceOut << " CACHE: Clear done";
+            trace("CL done");
             // now raise irq if enabled and available
             if((irqSystem != NULL) && ((ccr & CTRL_IRQ) == CTRL_IRQ))
                 irqSystem->SetIrqFlag(this, irqVectorNo);
@@ -391,6 +412,19 @@ unsigned int HWCache::CpuCycle() {
     } else
         return 0;
 
+}
+
+void HWCache::trace(const char *fmt, ...) {
+    if (!traceFile)
+        return;
+
+    long cyc = SystemClock::Instance().GetClockCycles();
+    fprintf(traceFile, "%ld: ", cyc);
+    va_list args;
+    va_start(args,fmt);
+    vfprintf(traceFile, fmt, args);
+    va_end(args);
+    fprintf(traceFile, "\n");
 }
 
 void HWCache::ClearIrqFlag(unsigned int vector) {
