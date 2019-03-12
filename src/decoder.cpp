@@ -102,15 +102,15 @@ static int get_A_5( word opcode );
 static int get_A_6( word opcode );
 
 int DecodedInstruction::Execute(unsigned int pc, bool trace) {
-    int cycles;
+    int cycles = 0;
     if (core->cache_insn) {
-        cycles = core->cache_insn->access(pc*2, this->len());
+        cycles += core->cache_insn->access(pc*2, this->len());
     }
 
     if (!trace) {
-        cycles = (*this)();
+        cycles += (*this)();
     } else {
-        cycles = this->Trace();
+        cycles += this->Trace();
     }
 
     return cycles;

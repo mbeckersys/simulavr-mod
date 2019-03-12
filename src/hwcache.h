@@ -50,34 +50,79 @@ class HWCache: public Hardware, public TraceValueRegister {
 
         //! if enabled, we have the following modes:
         typedef enum {
-          OPMODE_WRITETHROUGH = 0,
-          OPMODE_WRITEBACK
+          OPMODE_WRITEBACK = 0,
+          OPMODE_WRITETHROUGH  ///< implies write-allocate
         } op_mode_e;
 
+        typedef struct {
+            unsigned long num_access;
+            unsigned long num_miss;
+            unsigned long num_evict;
+            unsigned long num_writeback;
+            unsigned long num_unaligned;
+            unsigned long num_clears;
+        } cache_stats_t;
+
     protected:
+
+        //! one cache item of a set
+        typedef struct cache_entry_s {
+            unsigned int tag;
+            bool dirty;
+            cache_entry_s* next; ///< NULL if no older entries than this
+        } cache_entry_t;
+
+        /**
+         * @brief each set points to a linked list which is contiguous in memory and has
+         * length assoc+1, whereas the first element of the list is always present and a DUMMY.
+         * Dummy points to the actual list, whereas the items in the list are sorted by their age.
+         */
+        typedef struct cache_set_s {
+            cache_entry_t* begin;  ///< points to NULL-terminated list of
+            unsigned int num_entries;
+        } cache_set_t;
+
         AvrDevice *core;
+        // register stuff
         unsigned char ccr;
         unsigned char ccr_mask;
+        // irq stuff:
         HWIrqSystem* irqSystem;
         unsigned int irqVectorNo;
-        int cpuHoldCycles;
+        // device state:
         op_state_e opState;  ///< state machine
         op_mode_e opMode;
-        unsigned int opAddr;
+        int cpuHoldCycles;
+        SystemClockOffset clearDoneTime;
+        // user params:
+        unsigned int cache_config_nlines;
+        unsigned int cache_config_linesize;
+        unsigned int cache_config_assoc;
+        // model properties:
         int cacheHitCycles;
         int cacheMissCycles;
+        int cacheWritethroughCycles;
+        int cacheWritebackCycles;
         SystemClockOffset cacheClearTime;  ///< time, not clocks
-        SystemClockOffset clearDoneTime;
-
-        unsigned int cache_lines;
-        unsigned int cache_linesize;
-        unsigned int cache_assoc;
         // computed:
-        unsigned int cache_sets;
+        unsigned int cache_config_nsets;
         unsigned int cache_offsetbits;
+        // data for model:
+        cache_entry_t* cache_model_lines;
+        cache_set_t* cache_model_sets;
 
-        int _serve_request(unsigned int addr, unsigned char len, bool write, bool allow_update);
-        void _init_cache_model();
+        // for stats
+        cache_stats_t stats;
+
+        void _init_cache_model(void);
+        int _serve_access(unsigned int addr, unsigned char len, bool write, bool allow_update);
+        inline int _access_set(unsigned int set, unsigned int tag, bool write, bool allow_update);
+        inline int _update_set_lru(unsigned set, cache_entry_t* prev_item,
+                                   cache_entry_t* accessed_item, cache_entry_t* checked_item,
+                                   unsigned tag, bool write);
+        void _clear_cache(void);
+        void _cleanup_cache_model(void);
+
 
     public:
         //! bits in ctrl register
@@ -104,6 +149,8 @@ class HWCache: public Hardware, public TraceValueRegister {
 
         //! returns number of cpu cycles taken to access data item
         int access(unsigned int addr, unsigned char len, bool write=false);
+
+        void print_stats(void);
 
         //! returns > 0 if wait states are required
         virtual unsigned int CpuCycle();

@@ -76,6 +76,7 @@ AvrDevice_atmega128_c::~AvrDevice_atmega128_c() {
     delete osccal_reg;
     delete xdiv_reg;
     delete stack;
+    delete cache_insn;
     delete eeprom;
     delete irqSystem;
 }
