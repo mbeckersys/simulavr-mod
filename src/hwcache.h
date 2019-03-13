@@ -156,6 +156,7 @@ class HWCache: public Hardware, public TraceValueRegister {
         std::string get_stats(void);
         void print_stats(void);
         void fprint_stats(FILE* fp);
+        void fprint_set(FILE* fp, unsigned set) const;
 
         //! returns > 0 if wait states are required
         virtual unsigned int CpuCycle();

@@ -45,24 +45,25 @@
 
 //! Class, that handle messages to console and also exit/abort calls
 class SystemConsoleHandler {
-    
+
     public:
         //! creates a SystemConsoleHandler instance
         /*! This is needed only once for a application, see global variable
           sysConHandler, where such instance is created by default. */
         SystemConsoleHandler();
         ~SystemConsoleHandler();
-        
+
         //! Tells the handler, that exit/abort is to use instead of exceptions
         void SetUseExit(bool useExit = true);
         //! Sets the output stream, where messages are sent to
         void SetMessageStream(std::ostream *s);
         //! Sets the output stream, where warnings and errors are sent to
         void SetWarningStream(std::ostream *s);
-        
+
         void SetTraceFileOrStream(const char *name, unsigned long long maxlines = 0);
         //! Sets the trace to file stream and enables tracing global
         void SetTraceFile(const char *name, unsigned long long maxlines = 0);
+        std::string GetTraceFileName(void) const { return traceFilename; }
         //! Sets the trace to given stream and enables tracing global
         void SetTraceStream(std::ostream *s);
         //! Stops tracing global, close file, if set, redirect trace to nullStream
@@ -73,7 +74,7 @@ class SystemConsoleHandler {
         std::ostream &traceOutStream(void) { return *traceStream; }
         //! Ends a trace line, performs reopen new filestream, if necessary
         void TraceNextLine(void);
-        
+
         //! Format and send a message to message stream (default stdout)
         void vfmessage(const char *fmt, ...)
             ATTRIBUTE_PRINTF(2, 3);
@@ -87,14 +88,14 @@ class SystemConsoleHandler {
         ATTRIBUTE_NORETURN
         void vffatal(const char *file, int line, const char *fmt, ...)
             ATTRIBUTE_PRINTF(4, 5);
-        
+
         //! Aborts application: uses abort or exception depending on useExitAndAbort
         ATTRIBUTE_NORETURN
         void AbortApplication(int code);
         //! Exits application: uses exit or exception depending on useExitAndAbort
         ATTRIBUTE_NORETURN
         void ExitApplication(int code);
-        
+
     protected:
         bool useExitAndAbort; //!< Flag, if exit/abort have to be used instead of exceptions
         char formatStringBuffer[192]; //!< Buffer for format strings to format a message
@@ -109,7 +110,7 @@ class SystemConsoleHandler {
         unsigned long long traceLinesOnFile; //!< how much lines will be written on one trace file 0->means endless
         unsigned long long traceLines; //!< how much lines are written on current trace file
         int traceFileCount; //!< Counter for trace files
-        
+
         //! Creates the format string for formatting a message
         char *getFormatString(const char *prefix, const char *file, int line, const char *fmtstr);
 };

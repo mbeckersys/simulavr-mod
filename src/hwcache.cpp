@@ -75,8 +75,11 @@ HWCache::HWCache(AvrDevice *_core,
     cacheWritebackCycles(5)
 {
     if (trace_on) {
-        traceFile = fopen("cache.trace", "w");
-        avr_warning("Writing cache trace to 'cache.trace'");
+        std::string fname = sysConHandler.GetTraceFileName();
+        if (fname.empty()) fname = "trace";
+        fname += ".cache";
+        traceFile = fopen(fname.c_str(), "w");
+        avr_warning("Writing cache trace to '%s'", fname.c_str());
     } else {
         traceFile = NULL;
     }
@@ -89,7 +92,7 @@ HWCache::HWCache(AvrDevice *_core,
     } else {
         cacheClearTime = 8500000LL; // 8.5ms - writeback needs to store to backing memory
     }
-    if(irqSystem == NULL) {
+    if(NULL == irqSystem) {
         ccr_mask = ~CTRL_IRQ;  // ignore IRQ bit if system is not set up
     }
     ccr = CTRL_UNINITIALIZED;
@@ -175,6 +178,21 @@ void HWCache::fprint_stats(FILE* fp) {
     fprintf(fp, "%s\n", strstat.c_str());
 }
 
+void HWCache::fprint_set(FILE* fp, unsigned set) const {
+    assert(set < cache_config_nsets);
+    fprintf(fp, "SET %d:", set);
+    cache_entry_t* checked_item = cache_model_sets[set].begin;  ///< begin is the dummy item
+    unsigned int size = 0;
+    for (int k = 0; k < cache_config_assoc; ++k) {
+        if (NULL == checked_item->next) break;
+        size++;
+        checked_item = checked_item->next;
+        fprintf(fp, " [t=0x%x, d=%d]", checked_item->tag, checked_item->dirty);
+    }
+    fprintf(fp, "\n");
+    assert(size == cache_model_sets[set].num_entries);
+}
+
 void HWCache::print_stats(void) {
     std::string strstat = get_stats();
     avr_warning(strstat.c_str());
@@ -191,16 +209,17 @@ inline int HWCache::_update_set_lru
  unsigned tag, bool write)
 {
     int cycles = 0;
-    if (accessed_item == NULL) {
+    if (NULL == accessed_item) {
         // not in cache
         if (cache_model_sets[set].num_entries == cache_config_assoc) {
             // eviction needed: throw out oldest (LRU)
-            trace("EV: S=%d, t=0x%x", set, tag);
             assert(checked_item);
+            assert(NULL == checked_item->next);
+            trace("E s=%d, t=0x%x", set, checked_item->tag);
             if (opMode == OPMODE_WRITEBACK && checked_item->dirty) {
                 cycles += cacheWritebackCycles;
                 stats.num_writeback++;
-                trace("WB: S=%d, t=0x%x", set, tag);
+                trace("WB s=%d, t=0x%x", set, checked_item->tag);
             }
             // take its line
             accessed_item = checked_item;
@@ -216,15 +235,22 @@ inline int HWCache::_update_set_lru
         accessed_item->next = cache_model_sets[set].begin->next; // formerly youngest ages now
 
     } else {
-        // is in cache. just update LRU sorting
-        prev_item->next = accessed_item->next;
+        // is in cache. just update LRU sorting. accessed
+        if (prev_item != cache_model_sets[set].begin) {
+            prev_item->next = accessed_item->next;
+            accessed_item->next = cache_model_sets[set].begin->next;
+        }
     }
 
     // accessed is the youngest in the set now
     cache_model_sets[set].begin->next = accessed_item;
+    assert(accessed_item != accessed_item->next);
 
     // finally, set bits
     accessed_item->dirty = (write && opMode == OPMODE_WRITEBACK);
+
+    //if (traceFile)
+    //    fprint_set(traceFile, set);
     return cycles;
 }
 
@@ -238,9 +264,10 @@ inline int HWCache::_access_set
     // linear search for tag in set
     cache_entry_t* prev_item;
     cache_entry_t* found_item = NULL;
-    for (int k = 0; k < cache_config_assoc; ++k) {
+    int k;
+    for (k = 0; k < cache_config_assoc; ++k) {
         prev_item = checked_item;
-        if (!checked_item->next) break;
+        if (NULL == checked_item->next) break;
 
         checked_item = checked_item->next;
         if (checked_item->tag == tag) {
@@ -248,6 +275,7 @@ inline int HWCache::_access_set
             break;
         }
     }
+    assert(k <= cache_model_sets[set].num_entries);
 
     // hit/miss penalties
     if (found_item) {
@@ -256,7 +284,7 @@ inline int HWCache::_access_set
     } else {
         cycles = cacheMissCycles;
         stats.num_miss++;
-        trace("M: S=%d, t=0x%x", set, tag);
+        trace("M s=%d t=0x%x", set, tag);
     }
     if (write && opMode == OPMODE_WRITETHROUGH) {
         cycles += cacheWritethroughCycles;
@@ -286,7 +314,7 @@ int HWCache::_serve_access
     cycles += _access_set(set, block, write, allow_update);
 
     const bool unaligned = offset + len > cache_config_linesize;
-    trace("%c 0x%x +%d (S=%d) %c", !write ? 'R' : 'W', addr, len, set, unaligned ? 'U' : ' ');
+    trace("%c 0x%x +%d (s=%d)%s", !write ? 'R' : 'W', addr, len, set, unaligned ? " U" : "");
 
     if (unaligned) {
         // unaligned access
@@ -396,7 +424,7 @@ unsigned int HWCache::CpuCycle() {
             // process operation
             trace("CL done");
             // now raise irq if enabled and available
-            if((irqSystem != NULL) && ((ccr & CTRL_IRQ) == CTRL_IRQ))
+            if((NULL != irqSystem) && ((ccr & CTRL_IRQ) == CTRL_IRQ))
                 irqSystem->SetIrqFlag(this, irqVectorNo);
         }
     }
