@@ -223,8 +223,11 @@ inline int HWCache::_update_set_lru
             }
             // take its line
             accessed_item = checked_item;
+            // previously second-to-oldest is now oldest
+            if (cache_config_assoc > 1) {
             assert(prev_item != cache_model_sets[set].begin);
-            prev_item->next = NULL; // prev is now the oldest
+                prev_item->next = NULL;
+            }
             stats.num_evict++;
         } else {
             // space left in set: take free line
