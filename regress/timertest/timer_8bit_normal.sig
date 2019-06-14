@@ -1,0 +1,4 @@
++ TIMER0.Counter
++ TIMER0.TCNT
++ IRQ.VECTOR16
+
