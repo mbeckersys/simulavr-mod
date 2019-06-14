@@ -1,0 +1,14 @@
+# Attach simulator to GDB
+0. start simulavr in gdbserver mode
+  simulavr -l0 -datmega128  -ttrace -f des.elf -g
+1. start gdb
+  avr-gdb des.elf
+  target remote:1212
+  load
+2. set breakpoints or whatever you want to do
+  break ndes.c:231
+
+3. disconnect
+
+4. evaluate simulavr trace:
+scripts/simulavr2times.py -ttrace -e des.elf
